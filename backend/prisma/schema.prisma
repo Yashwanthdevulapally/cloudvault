@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  files     File[]
+  folders   Folder[]
+  activityLogs ActivityLog[]
+  createdAt DateTime @default(now())
+}
+
+model Folder {
+  id        Int      @id @default(autoincrement())
+  name      String
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  files     File[]
+  createdAt DateTime @default(now())
+
+  @@unique([name, userId])
+}
+
+model File {
+  id             Int       @id @default(autoincrement())
+  filename       String
+  s3Key          String
+  size           Int
+  mimeType       String
+  userId         Int
+  folderId       Int?
+  shareToken     String?   @unique
+  shareExpiresAt DateTime?
+  deletedAt      DateTime?
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder         Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  createdAt      DateTime  @default(now())
+}
+
+model ActivityLog {
+  id        Int      @id @default(autoincrement())
+  action    String
+  details   String?
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}

@@ -1,0 +1,322 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f5f7fb;
+  color: #1f2937;
+}
+
+button {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+/* AUTH */
+
+.auth-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef2ff;
+}
+
+.auth-card {
+  width: 380px;
+  padding: 35px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+}
+
+.auth-card h1 {
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.auth-card h2 {
+  text-align: center;
+  margin-bottom: 25px;
+}
+
+.auth-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-card input {
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.auth-card form button {
+  background: #4f46e5;
+  color: white;
+}
+
+.auth-card > button {
+  background: transparent;
+  color: #4f46e5;
+}
+
+/* DASHBOARD */
+
+header {
+  background: white;
+  padding: 20px 40px;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+header h1 {
+  margin: 0;
+}
+
+header p {
+  margin-right: auto;
+  color: #6b7280;
+}
+
+header button {
+  background: #ef4444;
+  color: white;
+}
+
+main {
+  max-width: 1000px;
+  margin: 40px auto;
+  padding: 0 20px;
+}
+
+section {
+  background: white;
+  padding: 25px;
+  margin-bottom: 25px;
+  border-radius: 14px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.05);
+}
+
+section h2 {
+  margin-top: 0;
+}
+
+section input[type="file"] {
+  margin-right: 15px;
+}
+
+section > button {
+  background: #4f46e5;
+  color: white;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  padding: 15px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.file-row:last-child {
+  border-bottom: none;
+}
+
+.file-name {
+  flex: 1;
+}
+
+.file-size {
+  width: 100px;
+  color: #6b7280;
+}
+
+.download-btn {
+  background: #10b981;
+  color: white;
+  margin-right: 8px;
+}
+
+.delete-btn {
+  background: #ef4444;
+  color: white;
+}
+
+.stats {
+  display: flex;
+  gap: 20px;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.stat-card {
+  flex: 1;
+  background: white;
+  padding: 20px;
+  border-radius: 14px;
+  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.05);
+}
+
+.stat-card h3 {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.stat-card p {
+  font-size: 28px;
+  font-weight: bold;
+  margin: 10px 0 0;
+}
+
+.search-input {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 20px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.folder-create {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.folder-create input {
+  flex: 1;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+}
+
+.folder-create button {
+  background: #4f46e5;
+  color: white;
+}
+
+.folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.folder-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.folder-card p {
+  margin: 5px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.upload-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 15px 0;
+}
+
+.upload-folder select {
+  padding: 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+}
+
+.file-folder {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 4px 8px;
+  background: #eef2ff;
+  color: #4f46e5;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.share-btn {
+  background: #8b5cf6;
+  color: white;
+  margin-right: 8px;
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.activity-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: white;
+}
+
+.activity-card strong {
+  text-transform: capitalize;
+  color: #374151;
+}
+
+.activity-card p {
+  margin: 5px 0 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.activity-card span {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.empty-message {
+  color: #6b7280;
+  padding: 20px 0;
+}
+
+.delete-btn {
+  background: #dc2626;
+  color: white;
+}
+
+.delete-btn:hover {
+  background: #b91c1c;
+}
+
+.file-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.file-info h3 {
+  margin-bottom: 5px;
+}
+
+.file-info p {
+  color: #6b7280;
+  font-size: 13px;
+  margin: 4px 0;
+}

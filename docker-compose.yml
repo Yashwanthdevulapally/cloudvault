@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: cloudvault-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cloudvault
+    ports:
+      - "5434:5432"
+    volumes:
+      - cloudvault_pgdata:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    container_name: cloudvault-backend
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/cloudvault?schema=public"
+      JWT_SECRET: "${JWT_SECRET}"
+      AWS_REGION: "${AWS_REGION}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+      AWS_S3_BUCKET_NAME: "${AWS_S3_BUCKET_NAME}"
+      PORT: 5001
+    ports:
+      - "5002:5001"
+    depends_on:
+      - postgres
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:5002
+    container_name: cloudvault-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  cloudvault_pgdata:
