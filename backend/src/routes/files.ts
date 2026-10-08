@@ -1,3 +1,219 @@
+/**
+ * @swagger
+ * /api/files/{id}/share:
+ *   post:
+ *     tags: [Files]
+ *     summary: Create a shareable file link
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       201:
+ *         description: Share link created
+ *       404:
+ *         description: File not found
+ *
+ * /api/files/trash:
+ *   get:
+ *     tags: [Files]
+ *     summary: Get deleted files
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of deleted files
+ *
+ * /api/files/{id}/restore:
+ *   post:
+ *     tags: [Files]
+ *     summary: Restore a deleted file
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: File restored
+ *       404:
+ *         description: File not found
+ *
+ * /api/files/{id}/permanent:
+ *   delete:
+ *     tags: [Files]
+ *     summary: Permanently delete a file
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: File permanently deleted
+ *
+ * /api/files/activity:
+ *   get:
+ *     tags: [Files]
+ *     summary: Get file activity logs
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Activity history
+ *
+ */
+
+/**
+ * @swagger
+ * tags:
+ *   name: Files
+ *   description: File upload, download, search, trash and storage operations
+ *
+ * /api/files:
+ *   get:
+ *     tags: [Files]
+ *     summary: Get user's active files
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of files
+ *       401:
+ *         description: Unauthorized
+ *
+ * /api/files/upload-url:
+ *   post:
+ *     tags: [Files]
+ *     summary: Generate a presigned S3 upload URL
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - filename
+ *               - mimeType
+ *               - size
+ *             properties:
+ *               filename:
+ *                 type: string
+ *               mimeType:
+ *                 type: string
+ *               size:
+ *                 type: integer
+ *               folderId:
+ *                 type: integer
+ *                 nullable: true
+ *     responses:
+ *       200:
+ *         description: Presigned S3 upload URL generated
+ *       400:
+ *         description: Invalid file information
+ *       401:
+ *         description: Unauthorized
+ *
+ * /api/files/upload-complete:
+ *   post:
+ *     tags: [Files]
+ *     summary: Save metadata after S3 upload
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - filename
+ *               - s3Key
+ *               - mimeType
+ *               - size
+ *             properties:
+ *               filename:
+ *                 type: string
+ *               s3Key:
+ *                 type: string
+ *               mimeType:
+ *                 type: string
+ *               size:
+ *                 type: integer
+ *               folderId:
+ *                 type: integer
+ *                 nullable: true
+ *     responses:
+ *       201:
+ *         description: File metadata saved
+ *       400:
+ *         description: Missing metadata
+ *       401:
+ *         description: Unauthorized
+ *
+ * /api/files/{id}/download:
+ *   get:
+ *     tags: [Files]
+ *     summary: Generate a presigned S3 download URL
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Presigned download URL
+ *       404:
+ *         description: File not found
+ *       401:
+ *         description: Unauthorized
+ *
+ * /api/files/storage/stats:
+ *   get:
+ *     tags: [Files]
+ *     summary: Get storage statistics
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Storage statistics
+ *       401:
+ *         description: Unauthorized
+ *
+ * /api/files/search:
+ *   get:
+ *     tags: [Files]
+ *     summary: Search user's files
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Matching files
+ *       401:
+ *         description: Unauthorized
+ */
+
 
 import express from "express";
 import multer from "multer";
@@ -10,7 +226,15 @@ import {
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 
+import {
+  getSignedUrl,
+} from "@aws-sdk/s3-request-presigner";
+
+import { env } from "../config/env";
+
 import prisma from "../lib/prisma";
+import redis from "../lib/redis";
+import { invalidateStorageCache } from "../lib/cache";
 import fs from "fs";
 
 import {
@@ -65,13 +289,76 @@ const upload = multer({
 });
 
 const s3 = new S3Client({
-  region: process.env.AWS_REGION,
+  region: env.AWS_REGION,
 
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    accessKeyId: env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
   },
 });
+
+
+// ======================================================
+// STORAGE STATISTICS
+// ======================================================
+
+router.get(
+  "/storage/stats",
+  authenticate,
+  async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const cacheKey = "storage:stats:" + userId;
+
+      // Check Redis cache first
+      const cachedStats = await redis.get(cacheKey);
+
+      if (cachedStats) {
+        console.log("⚡ Storage stats served from Redis");
+
+        return res.json(JSON.parse(cachedStats));
+      }
+
+      // Cache miss → query PostgreSQL
+      const result = await prisma.file.aggregate({
+        where: {
+          userId,
+          deletedAt: null,
+        },
+        _sum: {
+          size: true,
+        },
+        _count: {
+          id: true,
+        },
+      });
+
+      const response = {
+        totalFiles: result._count.id,
+        totalStorage: result._sum.size || 0,
+        maxStorage: 1024 * 1024 * 1024,
+      };
+
+      // Store result in Redis for 30 seconds
+      await redis.set(
+        cacheKey,
+        JSON.stringify(response),
+        "EX",
+        30
+      );
+
+      console.log("💾 Storage stats cached in Redis");
+
+      return res.json(response);
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        message: "Failed to fetch storage statistics",
+      });
+    }
+  }
+);
 
 
 // ======================================================
@@ -79,29 +366,58 @@ const s3 = new S3Client({
 // ======================================================
 
 router.post(
-  "/upload",
+  "/upload-url",
   authenticate,
-  upload.single("file"),
-
   async (req: AuthRequest, res) => {
     try {
-      if (!req.file) {
+      const userId = req.userId!;
+
+      const {
+        filename,
+        mimeType,
+        size,
+        folderId,
+      } = req.body;
+
+      if (
+        typeof filename !== "string" ||
+        !filename.trim()
+      ) {
         return res.status(400).json({
-          message: "No file uploaded",
+          message: "Filename is required",
         });
       }
 
-      const userId = req.userId!;
+      if (
+        typeof mimeType !== "string" ||
+        !allowedMimeTypes.includes(mimeType)
+      ) {
+        return res.status(400).json({
+          message: "This file type is not allowed",
+        });
+      }
 
-      const folderId = req.body.folderId
-        ? Number(req.body.folderId)
+      const fileSize = Number(size);
+
+      if (
+        !Number.isFinite(fileSize) ||
+        fileSize <= 0 ||
+        fileSize > 10 * 1024 * 1024
+      ) {
+        return res.status(400).json({
+          message: "File size must be between 1 byte and 10 MB",
+        });
+      }
+
+      const parsedFolderId = folderId
+        ? Number(folderId)
         : null;
 
-      if (folderId) {
+      if (parsedFolderId) {
         const folder = await prisma.folder.findFirst({
           where: {
-            id: folderId,
-            userId: userId,
+            id: parsedFolderId,
+            userId,
           },
         });
 
@@ -112,60 +428,105 @@ router.post(
         }
       }
 
-      const fileBuffer = fs.readFileSync(req.file.path);
-
       const safeFilename = sanitizeFilename(
-        req.file.originalname
+        filename.trim()
       );
+
+      if (!safeFilename) {
+        return res.status(400).json({
+          message: "Invalid filename",
+        });
+      }
 
       const s3Key =
-        Date.now() + "-" + safeFilename;
+        Date.now() + "-" + crypto.randomBytes(8).toString("hex") + "-" + safeFilename;
 
-      await s3.send(
-        new PutObjectCommand({
-          Bucket: process.env.AWS_S3_BUCKET_NAME,
-          Key: s3Key,
-          Body: fileBuffer,
-          ContentType: req.file.mimetype,
-        })
+      const command = new PutObjectCommand({
+        Bucket: env.AWS_S3_BUCKET_NAME,
+        Key: s3Key,
+        ContentType: mimeType,
+      });
+
+      const uploadUrl = await getSignedUrl(
+        s3,
+        command,
+        { expiresIn: 300 }
       );
+
+      res.json({
+        uploadUrl,
+        s3Key,
+        filename: safeFilename,
+        mimeType,
+        size: fileSize,
+        folderId: parsedFolderId,
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        message: "Failed to create upload URL",
+      });
+    }
+  }
+);
+
+router.post(
+  "/upload-complete",
+  authenticate,
+  async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+
+      const {
+        filename,
+        s3Key,
+        mimeType,
+        size,
+        folderId,
+      } = req.body;
+
+      if (
+        !filename ||
+        !s3Key ||
+        !mimeType ||
+        !size
+      ) {
+        return res.status(400).json({
+          message: "Missing file metadata",
+        });
+      }
+
+      const fileSize = Number(size);
 
       const file = await prisma.file.create({
         data: {
-          filename: safeFilename,
-          s3Key: s3Key,
-          size: req.file.size,
-          mimeType: req.file.mimetype,
-          userId: userId,
-          folderId: folderId,
+          filename,
+          s3Key,
+          size: fileSize,
+          mimeType,
+          userId,
+          folderId: folderId || null,
         },
       });
-
-      fs.unlinkSync(req.file.path);
 
       await logActivity(
         userId,
         "FILE_UPLOADED",
-        "Uploaded " + safeFilename
+        "Uploaded " + filename
       );
+
+      await invalidateStorageCache(userId);
 
       res.status(201).json({
         message: "File uploaded successfully",
-        file: file,
+        file,
       });
-
     } catch (error) {
       console.error(error);
 
-      if (
-        req.file?.path &&
-        fs.existsSync(req.file.path)
-      ) {
-        fs.unlinkSync(req.file.path);
-      }
-
       res.status(500).json({
-        message: "S3 upload failed",
+        message: "Failed to save uploaded file",
       });
     }
   }
@@ -184,28 +545,142 @@ router.get(
     try {
       const userId = req.userId!;
 
-      const files = await prisma.file.findMany({
-        where: {
-          userId: userId,
-          deletedAt: null,
-        },
+      const page = Math.max(
+        Number(req.query.page) || 1,
+        1
+      );
 
-        include: {
-          folder: true,
-        },
+      const limit = Math.min(
+        Math.max(Number(req.query.limit) || 10, 1),
+        50
+      );
 
-        orderBy: {
-          createdAt: "desc",
+      const skip = (page - 1) * limit;
+
+      const [files, total] = await Promise.all([
+        prisma.file.findMany({
+          where: {
+            userId: userId,
+            deletedAt: null,
+          },
+
+          include: {
+            folder: true,
+          },
+
+          orderBy: {
+            createdAt: "desc",
+          },
+
+          skip,
+          take: limit,
+        }),
+
+        prisma.file.count({
+          where: {
+            userId: userId,
+            deletedAt: null,
+          },
+        }),
+      ]);
+
+      const totalPages = Math.ceil(total / limit);
+
+      res.json({
+        files,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1,
         },
       });
-
-      res.json(files);
-
     } catch (error) {
       console.error(error);
 
       res.status(500).json({
         message: "Failed to fetch files",
+      });
+    }
+  }
+);
+
+
+// ======================================================
+// RENAME FILE
+// ======================================================
+
+router.patch(
+  "/:id/rename",
+  authenticate,
+
+  async (req: AuthRequest, res) => {
+    try {
+      const fileId = Number(req.params.id);
+      const userId = req.userId!;
+      const newFilename = req.body.filename;
+
+      if (
+        typeof newFilename !== "string" ||
+        !newFilename.trim()
+      ) {
+        return res.status(400).json({
+          message: "Filename is required",
+        });
+      }
+
+      const safeFilename = sanitizeFilename(
+        newFilename.trim()
+      );
+
+      if (!safeFilename) {
+        return res.status(400).json({
+          message: "Invalid filename",
+        });
+      }
+
+      const file = await prisma.file.findFirst({
+        where: {
+          id: fileId,
+          userId: userId,
+          deletedAt: null,
+        },
+      });
+
+      if (!file) {
+        return res.status(404).json({
+          message: "File not found",
+        });
+      }
+
+      const updatedFile = await prisma.file.update({
+        where: {
+          id: fileId,
+        },
+
+        data: {
+          filename: safeFilename,
+        },
+      });
+
+      await logActivity(
+        userId,
+        "FILE_RENAMED",
+        `Renamed ${file.filename} to ${safeFilename}`
+      );
+
+      res.json({
+        message: "File renamed successfully",
+        file: updatedFile,
+      });
+
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        message: "Failed to rename file",
       });
     }
   }
@@ -405,7 +880,7 @@ router.delete(
 
       await s3.send(
         new DeleteObjectCommand({
-          Bucket: process.env.AWS_S3_BUCKET_NAME,
+          Bucket: env.AWS_S3_BUCKET_NAME,
           Key: file.s3Key,
         })
       );
@@ -421,6 +896,8 @@ router.delete(
         "FILE_PERMANENTLY_DELETED",
         "Permanently deleted " + file.filename
       );
+
+      await invalidateStorageCache(userId);
 
       res.json({
         message: "File permanently deleted",
@@ -605,42 +1082,26 @@ router.get(
         });
       }
 
-      const result = await s3.send(
-        new GetObjectCommand({
-          Bucket: process.env.AWS_S3_BUCKET_NAME,
-          Key: file.s3Key,
-        })
+      const downloadCommand = new GetObjectCommand({
+        Bucket: env.AWS_S3_BUCKET_NAME,
+        Key: file.s3Key,
+      });
+
+      const downloadUrl = await getSignedUrl(
+        s3,
+        downloadCommand,
+        { expiresIn: 60 }
       );
 
-      res.setHeader(
-        "Content-Disposition",
-        "attachment; filename=\"" +
-        file.filename +
-        "\""
+      await logActivity(
+        file.userId,
+        "SHARED_FILE_DOWNLOADED",
+        "Shared file downloaded: " + file.filename
       );
 
-      res.setHeader(
-        "Content-Type",
-        file.mimeType
-      );
-
-      if (result.Body) {
-        const body = result.Body as any;
-        const chunks: Buffer[] = [];
-
-        for await (const chunk of body) {
-          chunks.push(Buffer.from(chunk));
-        }
-
-        res.send(Buffer.concat(chunks));
-
-        await logActivity(
-          file.userId,
-          "SHARED_FILE_DOWNLOADED",
-          "Shared file downloaded: " +
-          file.filename
-        );
-      }
+      return res.json({
+        downloadUrl,
+      });
 
     } catch (error) {
       console.error(error);
@@ -680,41 +1141,26 @@ router.get(
         });
       }
 
-      const result = await s3.send(
-        new GetObjectCommand({
-          Bucket: process.env.AWS_S3_BUCKET_NAME,
-          Key: file.s3Key,
-        })
+      const downloadCommand = new GetObjectCommand({
+        Bucket: env.AWS_S3_BUCKET_NAME,
+        Key: file.s3Key,
+      });
+
+      const downloadUrl = await getSignedUrl(
+        s3,
+        downloadCommand,
+        { expiresIn: 60 }
       );
 
-      res.setHeader(
-        "Content-Disposition",
-        "attachment; filename=\"" +
-        file.filename +
-        "\""
+      await logActivity(
+        userId,
+        "FILE_DOWNLOADED",
+        "Downloaded " + file.filename
       );
 
-      res.setHeader(
-        "Content-Type",
-        file.mimeType
-      );
-
-      if (result.Body) {
-        const body = result.Body as any;
-        const chunks: Buffer[] = [];
-
-        for await (const chunk of body) {
-          chunks.push(Buffer.from(chunk));
-        }
-
-        res.send(Buffer.concat(chunks));
-
-        await logActivity(
-          userId,
-          "FILE_DOWNLOADED",
-          "Downloaded " + file.filename
-        );
-      }
+      return res.json({
+        downloadUrl,
+      });
 
     } catch (error) {
       console.error(error);

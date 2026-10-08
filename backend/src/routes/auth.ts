@@ -1,22 +1,119 @@
+/**
+ * @swagger
+ * tags:
+ *   name: Authentication
+ *   description: User registration and authentication
+ *
+ * /api/auth/register:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Register a new user
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - email
+ *               - password
+ *             properties:
+ *               name:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *                 format: password
+ *     responses:
+ *       201:
+ *         description: User registered successfully
+ *       400:
+ *         description: Invalid request
+ *
+ * /api/auth/login:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Login user
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *                 format: password
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       401:
+ *         description: Invalid credentials
+ */
+
 import express from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import rateLimit from "express-rate-limit";
 import prisma from "../lib/prisma";
+import {
+  registerSchema,
+  loginSchema,
+} from "../validators/auth";
 
 const router = express.Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || "cloudvault-secret";
+import { env } from "../config/env";
+
+const JWT_SECRET = env.JWT_SECRET;
+
+// Rate limit registration attempts
+const registerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  message: {
+    message: "Too many registration attempts. Please try again later.",
+  },
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});
+
+// Rate limit login attempts
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  message: {
+    message: "Too many login attempts. Please try again later.",
+  },
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+});
 
 // REGISTER
-router.post("/register", async (req, res) => {
+router.post("/register", registerLimiter, async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const result = registerSchema.safeParse(req.body);
 
-    if (!name || !email || !password) {
+    if (!result.success) {
       return res.status(400).json({
-        message: "All fields are required",
+        message: "Validation failed",
+        errors: result.error.issues.map((issue) => ({
+          field: issue.path.join("."),
+          message: issue.message,
+        })),
       });
     }
+
+    const { name, email, password } = result.data;
 
     const existingUser = await prisma.user.findUnique({
       where: { email },
@@ -55,9 +152,21 @@ router.post("/register", async (req, res) => {
 });
 
 // LOGIN
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const result = loginSchema.safeParse(req.body);
+
+    if (!result.success) {
+      return res.status(400).json({
+        message: "Validation failed",
+        errors: result.error.issues.map((issue) => ({
+          field: issue.path.join("."),
+          message: issue.message,
+        })),
+      });
+    }
+
+    const { email, password } = result.data;
 
     const user = await prisma.user.findUnique({
       where: { email },
@@ -69,7 +178,10 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const passwordMatch = await bcrypt.compare(password, user.password);
+    const passwordMatch = await bcrypt.compare(
+      password,
+      user.password
+    );
 
     if (!passwordMatch) {
       return res.status(401).json({

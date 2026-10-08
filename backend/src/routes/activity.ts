@@ -11,17 +11,50 @@ router.get(
     try {
       const userId = req.userId!;
 
-      const activities = await prisma.activityLog.findMany({
-        where: {
-          userId: userId,
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-        take: 20,
-      });
+      const page = Math.max(
+        Number(req.query.page) || 1,
+        1
+      );
 
-      res.json(activities);
+      const limit = Math.min(
+        Math.max(Number(req.query.limit) || 10, 1),
+        50
+      );
+
+      const skip = (page - 1) * limit;
+
+      const [activities, total] = await Promise.all([
+        prisma.activityLog.findMany({
+          where: {
+            userId: userId,
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+          skip,
+          take: limit,
+        }),
+
+        prisma.activityLog.count({
+          where: {
+            userId: userId,
+          },
+        }),
+      ]);
+
+      const totalPages = Math.ceil(total / limit);
+
+      res.json({
+        activities,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1,
+        },
+      });
     } catch (error) {
       console.error(error);
 

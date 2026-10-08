@@ -1,3 +1,58 @@
+/**
+ * @swagger
+ * tags:
+ *   name: Folders
+ *   description: Folder management
+ *
+ * /api/folders:
+ *   get:
+ *     tags: [Folders]
+ *     summary: Get user's folders
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of folders
+ *
+ *   post:
+ *     tags: [Folders]
+ *     summary: Create a folder
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *             properties:
+ *               name:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Folder created
+ *
+ * /api/folders/{id}:
+ *   delete:
+ *     tags: [Folders]
+ *     summary: Delete a folder
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Folder deleted
+ *       404:
+ *         description: Folder not found
+ */
+
 import express from "express";
 import prisma from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";

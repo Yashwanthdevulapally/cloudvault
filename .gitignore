@@ -21,3 +21,5 @@ backend/.windsurf/
 backend/test.txt
 backend/downloaded.txt
 backend/s3-test.txt
+backend/.env*
+*.env

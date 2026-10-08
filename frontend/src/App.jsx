@@ -25,8 +25,10 @@ function Dashboard() {
   const [folders, setFolders] = useState([]);
   const [trashFiles, setTrashFiles] = useState([]);
   const [activities, setActivities] = useState([]);
+  const [storageStats, setStorageStats] = useState(null);
 
   const [selectedFile, setSelectedFile] = useState(null);
+const [detailsFile, setDetailsFile] = useState(null);
   const [selectedFolder, setSelectedFolder] = useState("");
 
   const [newFolderName, setNewFolderName] = useState("");
@@ -40,6 +42,21 @@ function Dashboard() {
     Authorization: "Bearer " + token,
   };
 
+  const fetchStorageStats = async () => {
+    try {
+      const response = await axios.get(
+        `${API_URL}/api/files/storage/stats`,
+        {
+          headers: authHeaders,
+        }
+      );
+
+      setStorageStats(response.data);
+    } catch (error) {
+      console.error("Failed to fetch storage statistics", error);
+    }
+  };
+
   const fetchFiles = async () => {
     try {
       const response = await axios.get(
@@ -49,7 +66,7 @@ function Dashboard() {
         }
       );
 
-      setFiles(response.data);
+      setFiles(response.data.files);
     } catch (error) {
       console.error(error);
     }
@@ -94,7 +111,7 @@ function Dashboard() {
         }
       );
 
-      setActivities(response.data);
+      setActivities(response.data.activities);
     } catch (error) {
       console.error("Failed to fetch activities", error);
     }
@@ -105,6 +122,7 @@ function Dashboard() {
       fetchFiles();
       fetchFolders();
       fetchActivities();
+      fetchStorageStats();
     }
   }, [isLoggedIn]);
 
@@ -175,22 +193,53 @@ function Dashboard() {
       return;
     }
 
-    const formData = new FormData();
-
-    formData.append("file", selectedFile);
-
-    if (selectedFolder) {
-      formData.append("folderId", selectedFolder);
-    }
-
     try {
-      await axios.post(
-        API_URL + "/api/files/upload",
-        formData,
+      // Step 1: Ask backend for a presigned S3 upload URL
+      const urlResponse = await axios.post(
+        API_URL + "/api/files/upload-url",
+        {
+          filename: selectedFile.name,
+          mimeType: selectedFile.type,
+          size: selectedFile.size,
+          folderId: selectedFolder || null,
+        },
+        {
+          headers: authHeaders,
+        }
+      );
+
+      const {
+        uploadUrl,
+        s3Key,
+        filename,
+        mimeType,
+        size,
+        folderId,
+      } = urlResponse.data;
+
+      // Step 2: Upload file directly to private S3
+      await axios.put(
+        uploadUrl,
+        selectedFile,
         {
           headers: {
-            Authorization: "Bearer " + token,
+            "Content-Type": mimeType,
           },
+        }
+      );
+
+      // Step 3: Tell backend to save metadata
+      await axios.post(
+        API_URL + "/api/files/upload-complete",
+        {
+          filename,
+          s3Key,
+          mimeType,
+          size,
+          folderId,
+        },
+        {
+          headers: authHeaders,
         }
       );
 
@@ -204,12 +253,13 @@ function Dashboard() {
       fetchFiles();
       fetchFolders();
       fetchActivities();
+      fetchStorageStats();
     } catch (error) {
-      console.error(error);
+      console.error("UPLOAD ERROR:", error);
 
       setMessage(
         error.response?.data?.message ||
-          "Upload failed"
+        "Upload failed"
       );
     }
   };
@@ -219,33 +269,47 @@ function Dashboard() {
       const response = await axios.get(
         API_URL + "/api/files/" + id + "/download",
         {
-          responseType: "blob",
           headers: authHeaders,
         }
       );
 
-      const url = window.URL.createObjectURL(
-        new Blob([response.data])
+      console.log("Presigned URL:", response.data.downloadUrl);
+
+      const downloadResponse = await fetch(
+        response.data.downloadUrl
       );
 
+      if (!downloadResponse.ok) {
+        throw new Error(
+          "S3 download failed: " +
+          downloadResponse.status
+        );
+      }
+
+      const blob = await downloadResponse.blob();
+
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
 
       link.href = url;
-      link.setAttribute("download", filename);
+      link.download = filename;
 
       document.body.appendChild(link);
-
       link.click();
-
       link.remove();
 
       window.URL.revokeObjectURL(url);
 
+      setMessage("Download started");
       fetchActivities();
     } catch (error) {
-      console.error(error);
+      console.error("DOWNLOAD ERROR:", error);
 
-      setMessage("Download failed");
+      setMessage(
+        error.response?.data?.message ||
+        error.message ||
+        "Download failed"
+      );
     }
   };
 
@@ -323,6 +387,41 @@ function Dashboard() {
       setMessage(
         error.response?.data?.message ||
         "Failed to move file to trash"
+      );
+    }
+  };
+
+  const renameFile = async (id, currentFilename) => {
+    const newFilename = window.prompt(
+      "Enter new filename:",
+      currentFilename
+    );
+
+    if (!newFilename || !newFilename.trim()) {
+      return;
+    }
+
+    try {
+      await axios.patch(
+        API_URL + "/api/files/" + id + "/rename",
+        {
+          filename: newFilename.trim(),
+        },
+        {
+          headers: authHeaders,
+        }
+      );
+
+      setMessage("File renamed successfully");
+
+      fetchFiles();
+      fetchActivities();
+    } catch (error) {
+      console.error(error);
+
+      setMessage(
+        error.response?.data?.message ||
+        "Failed to rename file"
       );
     }
   };
@@ -441,7 +540,7 @@ function Dashboard() {
         <section className="stats">
           <div className="stat-card">
             <h3>Total Files</h3>
-            <p>{totalFiles}</p>
+            <p>{storageStats?.totalFiles ?? totalFiles}</p>
           </div>
 
           <div className="stat-card">
@@ -453,8 +552,40 @@ function Dashboard() {
             <h3>Storage Used</h3>
 
             <p>
-              {(totalStorage / 1024 / 1024).toFixed(2)} MB
+              {storageStats
+                ? `${(storageStats.totalStorage / 1024 / 1024).toFixed(2)} MB`
+                : `${(totalStorage / 1024 / 1024).toFixed(2)} MB`}
             </p>
+
+            {storageStats && (
+              <>
+                <small>
+                  {((storageStats.totalStorage / storageStats.maxStorage) * 100).toFixed(2)}% of 1 GB used
+                </small>
+
+                <div
+                  style={{
+                    marginTop: "10px",
+                    height: "8px",
+                    background: "#e5e7eb",
+                    borderRadius: "10px",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${Math.min(
+                        (storageStats.totalStorage / storageStats.maxStorage) * 100,
+                        100
+                      )}%`,
+                      height: "100%",
+                      background: "#2563eb",
+                      transition: "width 0.3s ease",
+                    }}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </section>
 
@@ -622,6 +753,25 @@ function Dashboard() {
                   Download
                 </button>
 
+                <button
+                  className="share-btn"
+                  onClick={() =>
+                    renameFile(
+                      file.id,
+                      file.filename
+                    )
+                  }
+                >
+                  Rename
+                </button>
+
+                <button
+                  className="share-btn"
+                  onClick={() => setDetailsFile(file)}
+                >
+                  Details
+                </button>
+
                 {file.shareToken ? (
                   <button
                     className="share-btn"
@@ -655,6 +805,53 @@ function Dashboard() {
           )}
         </section>
 
+
+        {detailsFile && (
+          <div className="details-overlay">
+            <div className="details-modal">
+              <h2>📄 File Details</h2>
+
+              <p>
+                <strong>Filename:</strong>{" "}
+                {detailsFile.filename}
+              </p>
+
+              <p>
+                <strong>Size:</strong>{" "}
+                {(detailsFile.size / 1024).toFixed(2)} KB
+              </p>
+
+              <p>
+                <strong>File Type:</strong>{" "}
+                {detailsFile.mimeType || "Unknown"}
+              </p>
+
+              <p>
+                <strong>Folder:</strong>{" "}
+                {detailsFile.folder?.name || "No folder"}
+              </p>
+
+              <p>
+                <strong>Uploaded:</strong>{" "}
+                {new Date(detailsFile.createdAt).toLocaleString()}
+              </p>
+
+              <p>
+                <strong>Sharing:</strong>{" "}
+                {detailsFile.shareToken
+                  ? "Enabled"
+                  : "Disabled"}
+              </p>
+
+              <button
+                className="delete-btn"
+                onClick={() => setDetailsFile(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ACTIVITY */}
 

@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "cloudvault-secret";
+import { env } from "../config/env";
+
+const JWT_SECRET = env.JWT_SECRET;
 
 export interface AuthRequest extends Request {
   userId?: number;

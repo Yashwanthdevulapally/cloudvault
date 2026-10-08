@@ -7,14 +7,14 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  password  String
-  files     File[]
-  folders   Folder[]
+  id           Int           @id @default(autoincrement())
+  name         String
+  email        String        @unique
+  password     String
+  files        File[]
+  folders      Folder[]
   activityLogs ActivityLog[]
-  createdAt DateTime @default(now())
+  createdAt    DateTime      @default(now())
 }
 
 model Folder {
@@ -26,6 +26,7 @@ model Folder {
   createdAt DateTime @default(now())
 
   @@unique([name, userId])
+  @@index([userId])
 }
 
 model File {
@@ -44,6 +45,11 @@ model File {
   folder         Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
   createdAt      DateTime  @default(now())
+
+  @@index([userId])
+  @@index([folderId])
+  @@index([deletedAt])
+  @@index([userId, deletedAt])
 }
 
 model ActivityLog {
@@ -52,5 +58,7 @@ model ActivityLog {
   details   String?
   userId    Int
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
 }
