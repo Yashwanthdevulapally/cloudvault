@@ -121,6 +121,7 @@ const [detailsFile, setDetailsFile] = useState(null);
     if (isLoggedIn) {
       fetchFiles();
       fetchFolders();
+      fetchTrash();
       fetchActivities();
       fetchStorageStats();
     }
