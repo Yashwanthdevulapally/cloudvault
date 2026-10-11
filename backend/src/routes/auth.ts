@@ -90,7 +90,7 @@ const registerLimiter = rateLimit({
 // Rate limit login attempts
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 10,
+  limit: process.env.NODE_ENV === "development" ? 1000 : 10,
   message: {
     message: "Too many login attempts. Please try again later.",
   },

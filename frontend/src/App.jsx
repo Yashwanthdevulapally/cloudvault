@@ -318,29 +318,26 @@ const [detailsFile, setDetailsFile] = useState(null);
       const response = await axios.post(
         API_URL + "/api/files/" + id + "/share",
         {},
-        {
-          headers: authHeaders,
-        }
+        { headers: authHeaders }
       );
 
       const shareLink = response.data.shareLink;
 
-      await navigator.clipboard.writeText(
-        shareLink
-      );
+      setMessage("Share link: " + shareLink);
 
-      setMessage(
-        "Share link created and copied to clipboard"
-      );
+      try {
+        await navigator.clipboard.writeText(shareLink);
+        setMessage("Share link created and copied: " + shareLink);
+      } catch {
+        setMessage("Share link created. Copy this link: " + shareLink);
+      }
 
       fetchFiles();
       fetchActivities();
     } catch (error) {
-      console.error(error);
-
+      console.error("CREATE SHARE LINK ERROR:", error.response?.data || error);
       setMessage(
-        error.response?.data?.message ||
-          "Failed to create share link"
+        error.response?.data?.message || "Failed to create share link"
       );
     }
   };
