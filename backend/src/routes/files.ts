@@ -960,9 +960,9 @@ router.post(
         "Created share link for " + file.filename
       );
 
+      const frontendUrl = env.FRONTEND_URL.replace(/\/$/, "");
       const shareLink =
-        "http://localhost:5173/share/" +
-        shareToken;
+        frontendUrl + "/share/" + shareToken;
 
       res.json({
         message: "Share link created successfully",
